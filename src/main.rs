@@ -1,21 +1,26 @@
-use bevy::{color::palettes::css, prelude::*, pbr::{CascadeShadowConfigBuilder, DirectionalLightShadowMap}};
+use bevy::color::palettes::css;
+use bevy::prelude::*;
+use bevy::asset::AssetMetaCheck::Never;
 // use bevy_wind_waker_shader::prelude::*;
-// use avian3d::prelude::*;
-
+use avian3d::prelude::*;
 use bevy_tnua::prelude::*;
-use bevy_xpbd_3d::prelude::*;
-use bevy_tnua_xpbd3d::*;
+use bevy_tnua_avian3d::*;
 
 
 fn main() {
+    let asset_plugin_custom = AssetPlugin {
+        meta_check: Never,
+        ..default()
+    };
+
     App::new()
         .add_plugins((
-            DefaultPlugins,
+            DefaultPlugins.set(asset_plugin_custom),
             PhysicsPlugins::default(),
             // We need both Tnua's main controller plugin, and the plugin to connect to the physics
-            // backend (in this case XBPD-3D)
+            // backend (in this case Avian-3D)
             TnuaControllerPlugin::default(),
-            TnuaXpbd3dPlugin::default(),
+            TnuaAvian3dPlugin::default(),
         ))
         .add_systems(
             Startup,
@@ -64,7 +69,7 @@ fn setup_level(
             ..Default::default()
         },
         RigidBody::Static,
-        Collider::halfspace(Vec3::Y),
+        Collider::half_space(Vec3::Y),
     ));
 
     // Spawn a little platform for the player to jump on.
@@ -82,11 +87,12 @@ fn setup_level(
 
 fn setup_player(
     mut commands: Commands,
-    mut asset_server: ResMut<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+    mut _meshes: ResMut<Assets<Mesh>>,
+    mut _materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let anoncat_handle = asset_server.load("cat4.glb#Scene0");
+    // let anoncat_handle = asset_server.load("cat4.glb#Scene0");
+    let anoncat_handle = asset_server.load("floor.glb#Scene0");
 
     commands.spawn((
         SceneBundle {
@@ -107,7 +113,7 @@ fn setup_player(
         // This bundle holds the main components.
         TnuaControllerBundle::default(),
         // A sensor shape is not strictly necessary, but without it we'll get weird results.
-        TnuaXpbd3dSensorShape(Collider::cylinder(0.49, 0.0)),
+        TnuaAvian3dSensorShape(Collider::cylinder(0.49, 0.0)),
         // Tnua can fix the rotation, but the character will still get rotated before it can do so.
         // By locking the rotation we can prevent this.
         LockedAxes::ROTATION_LOCKED,
