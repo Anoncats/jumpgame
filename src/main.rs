@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::color::palettes::css;
 use bevy::prelude::*;
 use bevy::asset::AssetMetaCheck::Never;
@@ -6,6 +8,21 @@ use avian3d::prelude::*;
 use bevy_tnua::prelude::*;
 use bevy_tnua_avian3d::*;
 
+#[derive(Component)]
+struct Player;
+
+// Add this resource to store the camera's current position
+#[derive(Resource)]
+struct CameraState {
+    position: Vec3,
+}
+
+#[derive(Resource)]
+struct PlayerAnimations {
+    animations: Vec<AnimationNodeIndex>,
+    #[allow(dead_code)]
+    graph: Handle<AnimationGraph>,
+}
 
 fn main() {
     let asset_plugin_custom = AssetPlugin {
@@ -17,24 +34,32 @@ fn main() {
         .add_plugins((
             DefaultPlugins.set(asset_plugin_custom),
             PhysicsPlugins::default(),
-            // We need both Tnua's main controller plugin, and the plugin to connect to the physics
-            // backend (in this case Avian-3D)
             TnuaControllerPlugin::default(),
             TnuaAvian3dPlugin::default(),
         ))
+        .insert_resource(CameraState {
+            position: Vec3::ZERO
+        })
         .add_systems(
-            Startup,
-            (setup_camera_and_lights, setup_level, setup_player),
+            Startup, (
+                setup_camera_and_lights,
+                setup_level,
+                setup_player
+            ),
         )
-        .add_systems(Update, apply_controls.in_set(TnuaUserControlsSystemSet))
+        .add_systems(Update, (
+                apply_controls.in_set(TnuaUserControlsSystemSet),
+                update_camera,
+            ),
+        )
         .run();
 }
 
 // No Tnua-related setup here - this is just normal Bevy stuff.
 fn setup_camera_and_lights(mut commands: Commands) {
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0,  5.0, 20.0)
-            .looking_at(Vec3::new(0.0,  8.0, 0.0), Vec3::Y),
+        transform: Transform::from_xyz(0.0, 2.5, 8.0)
+            .looking_at(Vec3::new(0.0, 1.5, 0.0), Vec3::Y),
         ..Default::default()
     });
 
@@ -55,33 +80,93 @@ fn setup_camera_and_lights(mut commands: Commands) {
     });
 }
 
+fn update_camera(
+    player_query: Query<&Transform, With<Player>>,
+    mut camera_query: Query<&mut Transform, (With<Camera3d>, Without<Player>)>,
+    time: Res<Time>,
+    mut camera_state: ResMut<CameraState>,
+) {
+    let player_transform = player_query.single();
+    let mut camera_transform = camera_query.single_mut();
+
+    // Adjust these values to bring the camera closer
+    let camera_offset = Vec3::new(0.0, 2.5, 8.0);
+    let look_at_offset = Vec3::new(0.0, 1.5, 0.0);
+
+    let target = player_transform.translation + camera_offset;
+
+    // Smoothly interpolate the camera position
+    let smoothness = 5.0; // Adjust this value to change the smoothing amount (higher = smoother)
+    camera_state.position = camera_state.position.lerp(target,
+        smoothness * time.delta_seconds(),
+    );
+
+    camera_transform.translation = camera_state.position;
+    camera_transform.look_at(player_transform.translation + look_at_offset, Vec3::Y);
+}
+
+
 // No Tnua-related setup here - this is just normal Bevy (and Avian) stuff.
 fn setup_level(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Spawn the ground.
-    commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Plane3d::default().mesh().size(128.0, 128.0)),
-            material: materials.add(Color::WHITE),
-            ..Default::default()
-        },
-        RigidBody::Static,
-        Collider::half_space(Vec3::Y),
-    ));
+    let floor_handle = asset_server.load("floor.glb#Scene0");
 
-    // Spawn a little platform for the player to jump on.
+    // Spawn the ground.
+    // commands.spawn((
+    //     SceneBundle {
+    //         scene: floor_handle,
+    //         transform: Transform::from_xyz(0.0, 0.0, 0.0),
+    //         ..Default::default()
+    //     },
+    //     RigidBody::Static,
+    //     Collider::half_space(Vec3::Y),
+    // ));
+    // Function to spawn a floor tile at a given position
+    // let spawn_floor_tile = |commands: &mut Commands, position: Vec3| {
+    //     commands.spawn((
+    //         SceneBundle {
+    //             scene: floor_handle.clone(),
+    //             transform: Transform::from_translation(position),
+    //             ..Default::default()
+    //         },
+    //         RigidBody::Static,
+    //         Collider::cuboid(0.48, 0.48, 0.48),
+    //     ));
+    // };
+
+    // // Spawn floor tiles in a grid pattern
+    let size = 20.0;
+    // for x in -grid_size..=grid_size {
+    //     for z in -grid_size..=grid_size {
+    //         let position = Vec3::new(
+    //             x as f32 * tile_size,
+    //             0.0,
+    //             z as f32 * tile_size,
+    //         );
+    //         spawn_floor_tile(&mut commands, position);
+    //     }
+    // }
+
     commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Cuboid::new(4.0, 1.0, 4.0)),
-            material: materials.add(Color::from(css::GRAY)),
-            transform: Transform::from_xyz(-6.0, 2.0, 0.0),
+        SceneBundle {
+            scene: floor_handle.clone(),
+            transform: Transform::from_scale(Vec3::new(
+                size,
+                1.0,
+                size
+            )).with_translation(Vec3::new(0.0, 0.0, 0.0)),
             ..Default::default()
         },
         RigidBody::Static,
-        Collider::cuboid(4.0, 1.0, 4.0),
+        Collider::cuboid(
+            size,
+            1.0,
+            size,
+        ),
     ));
 }
 
@@ -90,39 +175,62 @@ fn setup_player(
     asset_server: Res<AssetServer>,
     mut _meshes: ResMut<Assets<Mesh>>,
     mut _materials: ResMut<Assets<StandardMaterial>>,
+    mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
-    // let anoncat_handle = asset_server.load("cat4.glb#Scene0");
-    let anoncat_handle = asset_server.load("floor.glb#Scene0");
+    let anoncat_handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset("cat4.glb"));
 
-    commands.spawn((
+    // Build the animation graph
+    let mut graph = AnimationGraph::new();
+    let animations = graph
+        .add_clips(
+            [
+                GltfAssetLabel::Animation(0).from_asset("cat4.glb"),
+                GltfAssetLabel::Animation(1).from_asset("cat4.glb"),
+                GltfAssetLabel::Animation(2).from_asset("cat4.glb"),
+                GltfAssetLabel::Animation(3).from_asset("cat4.glb"),
+                GltfAssetLabel::Animation(4).from_asset("cat4.glb"),
+                GltfAssetLabel::Animation(5).from_asset("cat4.glb"),
+                GltfAssetLabel::Animation(6).from_asset("cat4.glb"),
+                GltfAssetLabel::Animation(7).from_asset("cat4.glb"),
+            ]
+            .into_iter()
+            .map(|path| asset_server.load(path)),
+            1.0,
+            graph.root,
+        )
+        .collect();
+
+    let graph = graphs.add(graph);
+
+    commands.insert_resource(PlayerAnimations {
+        animations,
+        graph: graph.clone(),
+    });
+
+    // Spawn the player
+    let _player_entity = commands.spawn((
         SceneBundle {
-            scene: anoncat_handle,
-            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            scene: anoncat_handle.clone(),
+            transform: Transform::from_xyz(0.0, 0.8, 0.0),
             ..Default::default()
         },
-        // PbrBundle {
-        //     mesh: anoncat_handle,
-        //     material: materials.add(Color::from(css::DARK_CYAN)),
-        //     transform: Transform::from_xyz(0.0, 2.0, 0.0),
-        //     ..Default::default()
-        // },
-        // The player character needs to be configured as a dynamic rigid body of the physics
-        // engine.
         RigidBody::Dynamic,
-        Collider::capsule(0.5, 0.8),
-        // This bundle holds the main components.
+        Collider::capsule(0.4, 0.6),
         TnuaControllerBundle::default(),
-        // A sensor shape is not strictly necessary, but without it we'll get weird results.
-        TnuaAvian3dSensorShape(Collider::cylinder(0.49, 0.0)),
-        // Tnua can fix the rotation, but the character will still get rotated before it can do so.
-        // By locking the rotation we can prevent this.
+        TnuaAvian3dSensorShape(Collider::cylinder(0.4, 0.6)),
         LockedAxes::ROTATION_LOCKED,
-    ));
-    // NOTE: if this was Rapier, we'd also need `TnuaRapier3dIOBundle`. Avian does not need it.
+        Player,
+        AnimationPlayer::default(), // Add this line
+    )).id();
+
 }
 
-fn apply_controls(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut TnuaController>) {
-    let Ok(mut controller) = query.get_single_mut() else {
+fn apply_controls(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut query: Query<(&mut TnuaController, &mut AnimationPlayer)>,
+    animations: Res<PlayerAnimations>,
+) {
+    let Ok((mut controller, mut animation_player)) = query.get_single_mut() else {
         return;
     };
 
@@ -149,7 +257,7 @@ fn apply_controls(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Tnu
         desired_velocity: direction.normalize_or_zero() * 10.0,
         // The `float_height` must be greater (even if by little) from the distance between the
         // character's center and the lowest point of its collider.
-        float_height: 1.5,
+        float_height: 0.4,
         // `TnuaBuiltinWalk` has many other fields for customizing the movement - but they have
         // sensible defaults. Refer to the `TnuaBuiltinWalk`'s documentation to learn what they do.
         ..Default::default()
@@ -164,5 +272,8 @@ fn apply_controls(keyboard: Res<ButtonInput<KeyCode>>, mut query: Query<&mut Tnu
             // `TnuaBuiltinJump` also has customization fields with sensible defaults.
             ..Default::default()
         });
+
+        // TODO: fix animations
+        animation_player.play(animations.animations[1]).repeat();
     }
 }
