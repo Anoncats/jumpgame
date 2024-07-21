@@ -1,15 +1,11 @@
-use std::time::Duration;
-
-use bevy::color::palettes::css;
-use bevy::prelude::*;
-use bevy::asset::AssetMetaCheck::Never;
+use bevy::{
+    asset::AssetMetaCheck::Never, input::touch::Touches, prelude::*, window::WindowResolution
+};
 // use bevy_wind_waker_shader::prelude::*;
 use avian3d::prelude::*;
 use bevy_tnua::prelude::*;
 use bevy_tnua_avian3d::*;
 
-#[derive(Component)]
-struct Player;
 
 // Add this resource to store the camera's current position
 #[derive(Resource)]
@@ -17,12 +13,8 @@ struct CameraState {
     position: Vec3,
 }
 
-#[derive(Resource)]
-struct PlayerAnimations {
-    animations: Vec<AnimationNodeIndex>,
-    #[allow(dead_code)]
-    graph: Handle<AnimationGraph>,
-}
+#[derive(Component)]
+struct Player;
 
 fn main() {
     let asset_plugin_custom = AssetPlugin {
@@ -32,7 +24,19 @@ fn main() {
 
     App::new()
         .add_plugins((
-            DefaultPlugins.set(asset_plugin_custom),
+            DefaultPlugins
+                .set(asset_plugin_custom)
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Anoncat Jump Jump".into(),
+                        name: Some("anoncat jump jump.app".into()),
+                        resolution: WindowResolution::new(480.,800.).into(),
+                        present_mode: bevy::window::PresentMode::AutoVsync,
+                        fit_canvas_to_parent: true,
+                        ..default()
+                    }),
+                    ..default()
+                }),
             PhysicsPlugins::default(),
             TnuaControllerPlugin::default(),
             TnuaAvian3dPlugin::default(),
@@ -47,6 +51,7 @@ fn main() {
                 setup_player
             ),
         )
+        // .add_systems(Update, setup_animation_once_loaded.before(animate_targets))
         .add_systems(Update, (
                 apply_controls.in_set(TnuaUserControlsSystemSet),
                 update_camera,
@@ -110,46 +115,11 @@ fn update_camera(
 fn setup_level(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let floor_handle = asset_server.load("floor.glb#Scene0");
 
-    // Spawn the ground.
-    // commands.spawn((
-    //     SceneBundle {
-    //         scene: floor_handle,
-    //         transform: Transform::from_xyz(0.0, 0.0, 0.0),
-    //         ..Default::default()
-    //     },
-    //     RigidBody::Static,
-    //     Collider::half_space(Vec3::Y),
-    // ));
-    // Function to spawn a floor tile at a given position
-    // let spawn_floor_tile = |commands: &mut Commands, position: Vec3| {
-    //     commands.spawn((
-    //         SceneBundle {
-    //             scene: floor_handle.clone(),
-    //             transform: Transform::from_translation(position),
-    //             ..Default::default()
-    //         },
-    //         RigidBody::Static,
-    //         Collider::cuboid(0.48, 0.48, 0.48),
-    //     ));
-    // };
-
-    // // Spawn floor tiles in a grid pattern
+    // Spawn floor tiles and scale them
     let size = 20.0;
-    // for x in -grid_size..=grid_size {
-    //     for z in -grid_size..=grid_size {
-    //         let position = Vec3::new(
-    //             x as f32 * tile_size,
-    //             0.0,
-    //             z as f32 * tile_size,
-    //         );
-    //         spawn_floor_tile(&mut commands, position);
-    //     }
-    // }
 
     commands.spawn((
         SceneBundle {
@@ -175,42 +145,26 @@ fn setup_player(
     asset_server: Res<AssetServer>,
     mut _meshes: ResMut<Assets<Mesh>>,
     mut _materials: ResMut<Assets<StandardMaterial>>,
-    mut graphs: ResMut<Assets<AnimationGraph>>,
+    // mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
-    let anoncat_handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset("cat4.glb"));
+    // build animation graph
+    // let mut graph = AnimationGraph::new();
+    // let animations_arr: Vec<Handle<AnimationClip>> = (0..8).map(|i| {
+    //     asset_server.load(&format!("cat4.glb#Animation{}", i))
+    // }).collect();
+    // let animations= graph.add_clips(animations_arr, 1.0, graph.root).collect();
 
-    // Build the animation graph
-    let mut graph = AnimationGraph::new();
-    let animations = graph
-        .add_clips(
-            [
-                GltfAssetLabel::Animation(0).from_asset("cat4.glb"),
-                GltfAssetLabel::Animation(1).from_asset("cat4.glb"),
-                GltfAssetLabel::Animation(2).from_asset("cat4.glb"),
-                GltfAssetLabel::Animation(3).from_asset("cat4.glb"),
-                GltfAssetLabel::Animation(4).from_asset("cat4.glb"),
-                GltfAssetLabel::Animation(5).from_asset("cat4.glb"),
-                GltfAssetLabel::Animation(6).from_asset("cat4.glb"),
-                GltfAssetLabel::Animation(7).from_asset("cat4.glb"),
-            ]
-            .into_iter()
-            .map(|path| asset_server.load(path)),
-            1.0,
-            graph.root,
-        )
-        .collect();
+    // let graph = graphs.add(graph);
 
-    let graph = graphs.add(graph);
-
-    commands.insert_resource(PlayerAnimations {
-        animations,
-        graph: graph.clone(),
-    });
+    // commands.insert_resource(Animations {
+    //     animations,
+    //     graph: graph.clone(),
+    // });
 
     // Spawn the player
-    let _player_entity = commands.spawn((
+    commands.spawn((
         SceneBundle {
-            scene: anoncat_handle.clone(),
+            scene: asset_server.load(GltfAssetLabel::Scene(0).from_asset("cat4-resample-no-animation.glb")),
             transform: Transform::from_xyz(0.0, 0.8, 0.0),
             ..Default::default()
         },
@@ -219,22 +173,23 @@ fn setup_player(
         TnuaControllerBundle::default(),
         TnuaAvian3dSensorShape(Collider::cylinder(0.4, 0.6)),
         LockedAxes::ROTATION_LOCKED,
-        Player,
-        AnimationPlayer::default(), // Add this line
-    )).id();
+        Player
+    ));
 
 }
 
 fn apply_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut TnuaController, &mut AnimationPlayer)>,
-    animations: Res<PlayerAnimations>,
+    _touches: Res<Touches>,
+    mut query: Query<&mut TnuaController>,
 ) {
-    let Ok((mut controller, mut animation_player)) = query.get_single_mut() else {
+    let Ok(mut controller) = query.get_single_mut() else {
         return;
     };
 
     let mut direction = Vec3::ZERO;
+
+    // Keyboard controls
 
     if keyboard.pressed(KeyCode::ArrowUp) {
         direction -= Vec3::Z;
@@ -248,6 +203,24 @@ fn apply_controls(
     if keyboard.pressed(KeyCode::ArrowRight) {
         direction += Vec3::X;
     }
+
+    // Touch controls
+    // if let Some(touch) = touches.first() {
+    //     let window = get_primary_window_size(); // You'll need to implement this function
+    //     let touch_position = touch.position();
+
+    //     // Divide the screen into four quadrants for directional control
+    //     if touch_position.x < window.width / 2.0 {
+    //         direction -= Vec3::X; // Left
+    //     } else {
+    //         direction += Vec3::X; // Right
+    //     }
+    //     if touch_position.y < window.height / 2.0 {
+    //         direction += Vec3::Z; // Down
+    //     } else {
+    //         direction -= Vec3::Z; // Up
+    //     }
+    // }
 
     // Feed the basis every frame. Even if the player doesn't move - just use `desired_velocity:
     // Vec3::ZERO`. `TnuaController` starts without a basis, which will make the character collider
@@ -273,7 +246,5 @@ fn apply_controls(
             ..Default::default()
         });
 
-        // TODO: fix animations
-        animation_player.play(animations.animations[1]).repeat();
     }
 }
