@@ -1,10 +1,11 @@
 use bevy::{
-    asset::AssetMetaCheck::Never, input::touch::Touches, prelude::*, window::WindowResolution
+    asset::AssetMetaCheck::Never, prelude::*, window::WindowResolution
 };
 // use bevy_wind_waker_shader::prelude::*;
 use avian3d::prelude::*;
 use bevy_tnua::prelude::*;
 use bevy_tnua_avian3d::*;
+use virtual_joystick::*;
 
 
 // Add this resource to store the camera's current position
@@ -30,17 +31,18 @@ fn main() {
                     primary_window: Some(Window {
                         title: "Anoncat Jump Jump".into(),
                         name: Some("anoncat jump jump.app".into()),
-                        resolution: WindowResolution::new(480.,800.).into(),
+                        resolution: WindowResolution::new(480.,800.),
                         present_mode: bevy::window::PresentMode::AutoVsync,
                         fit_canvas_to_parent: true,
                         ..default()
                     }),
                     ..default()
                 }),
-            PhysicsPlugins::default(),
-            TnuaControllerPlugin::default(),
-            TnuaAvian3dPlugin::default(),
         ))
+        .add_plugins(VirtualJoystickPlugin::<String>::default())
+        .add_plugins(PhysicsPlugins::default())
+        .add_plugins(TnuaControllerPlugin::default())
+        .add_plugins(TnuaAvian3dPlugin::default())
         .insert_resource(CameraState {
             position: Vec3::ZERO
         })
@@ -48,16 +50,36 @@ fn main() {
             Startup, (
                 setup_camera_and_lights,
                 setup_level,
-                setup_player
+                setup_player,
+                setup_joystick,
             ),
         )
-        // .add_systems(Update, setup_animation_once_loaded.before(animate_targets))
-        .add_systems(Update, (
-                apply_controls.in_set(TnuaUserControlsSystemSet),
-                update_camera,
-            ),
-        )
+        .add_systems(Update, (apply_controls.in_set(TnuaUserControlsSystemSet), update_camera))
         .run();
+}
+
+fn setup_joystick(mut commands: Commands, asset_server: Res<AssetServer>) {
+    create_joystick(
+        &mut commands,
+        "joystick_1".to_string(),
+        asset_server.load("knob.png"),
+        asset_server.load("outline.png"),
+        None,
+        None,
+        None,
+        Vec2::new(75., 75.),
+        Vec2::new(100., 100.),
+        Style {
+            width: Val::Px(100.),
+            height: Val::Px(100.),
+            position_type: PositionType::Absolute,
+            left: Val::Percent(8.),
+            bottom: Val::Percent(10.),
+            ..default()
+        },
+        JoystickFloating,
+        NoAction
+    );
 }
 
 // No Tnua-related setup here - this is just normal Bevy stuff.
@@ -145,22 +167,7 @@ fn setup_player(
     asset_server: Res<AssetServer>,
     mut _meshes: ResMut<Assets<Mesh>>,
     mut _materials: ResMut<Assets<StandardMaterial>>,
-    // mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
-    // build animation graph
-    // let mut graph = AnimationGraph::new();
-    // let animations_arr: Vec<Handle<AnimationClip>> = (0..8).map(|i| {
-    //     asset_server.load(&format!("cat4.glb#Animation{}", i))
-    // }).collect();
-    // let animations= graph.add_clips(animations_arr, 1.0, graph.root).collect();
-
-    // let graph = graphs.add(graph);
-
-    // commands.insert_resource(Animations {
-    //     animations,
-    //     graph: graph.clone(),
-    // });
-
     // Spawn the player
     commands.spawn((
         SceneBundle {
@@ -180,7 +187,7 @@ fn setup_player(
 
 fn apply_controls(
     keyboard: Res<ButtonInput<KeyCode>>,
-    _touches: Res<Touches>,
+    mut joystick: EventReader<VirtualJoystickEvent<String>>,
     mut query: Query<&mut TnuaController>,
 ) {
     let Ok(mut controller) = query.get_single_mut() else {
@@ -190,7 +197,6 @@ fn apply_controls(
     let mut direction = Vec3::ZERO;
 
     // Keyboard controls
-
     if keyboard.pressed(KeyCode::ArrowUp) {
         direction -= Vec3::Z;
     }
@@ -204,23 +210,11 @@ fn apply_controls(
         direction += Vec3::X;
     }
 
-    // Touch controls
-    // if let Some(touch) = touches.first() {
-    //     let window = get_primary_window_size(); // You'll need to implement this function
-    //     let touch_position = touch.position();
-
-    //     // Divide the screen into four quadrants for directional control
-    //     if touch_position.x < window.width / 2.0 {
-    //         direction -= Vec3::X; // Left
-    //     } else {
-    //         direction += Vec3::X; // Right
-    //     }
-    //     if touch_position.y < window.height / 2.0 {
-    //         direction += Vec3::Z; // Down
-    //     } else {
-    //         direction -= Vec3::Z; // Up
-    //     }
-    // }
+    // Joystick controls
+    for j in joystick.read() {
+        let Vec2 { x, y} = j.axis();
+        direction += Vec3::new(*x, 0., *y * -1.);
+    }
 
     // Feed the basis every frame. Even if the player doesn't move - just use `desired_velocity:
     // Vec3::ZERO`. `TnuaController` starts without a basis, which will make the character collider
@@ -245,6 +239,7 @@ fn apply_controls(
             // `TnuaBuiltinJump` also has customization fields with sensible defaults.
             ..Default::default()
         });
-
     }
+
+    // TODO: Figure mobile version of jump
 }
